@@ -40,6 +40,11 @@ class Reactor:
         self.feed_deviation = None
         self.base_deviation = None
         self.airflow_deviation = None
+        self.temp_deviation = None
+
+        # variables to bring DO back to normal after an agitation or airflow deviation is fixed
+        self.fixed_motor = 0
+        self.fixed_airflow = 0
 
     @classmethod
     def get_instances(cls):
@@ -63,15 +68,14 @@ class Reactor:
 
     def end_run(self):
         '''
-        once the final_eft time has been reached, the run will not be active
+        Once the final_eft time has been reached, the run will not be active
         :return:
         '''
         self.active = False
 
     def create_csv(self):
         """
-        Creates the csv file for the reactor instance with headers and first row of data values. The first timestamp
-        is taken to be the start time
+        Creates the csv file for the reactor instance with headers and the first row of data values.
 
         :return: None
         """
@@ -94,9 +98,9 @@ class Reactor:
 
     def log_data(self):
         """
-        logs a single row of data to the reactor's csv file. pH needed to have less noise than the other parameters
-        to be more realistic. Checks if the current EFT is less than the final EFT before it logs the data. Calls
-        the reactor's end_run() method if it hits the final EFT.
+        If the run is still active, this calls all the methods that declare the value of each parameter and logs
+        a single row of data to the reactor's csv file. Otherwise, if the current EFT is equal to or exceeds the final
+        EFT, this will call the end_run method and finish the fermentation run.
         :return:
         """
         values = []
@@ -108,20 +112,21 @@ class Reactor:
 
         if current_eft < self.final_eft:
             values.append(current_timestamp)
-            self.do_trend(current_eft)
+            self.initial_DO(current_eft)
             self.first_pulse(current_eft)
             self.feed_spike(current_eft)
-            self.feed()
-            self.base()
-            self.motor_deviation()
-            self.antifoam(current_eft)
-            self.airflow_adjust()
-            # get rest of the row's parameter values
-            # self.param does not update with new values
+            self.feed_controller()
+            self.base_controller()
+            self.motor_controller()
+            self.antifoam_controller(current_eft)
+            self.airflow_controller()
+            self.temp_controller()
+
+            # add all the parameter values to the 'value' list that will be used to append data to the csv file
             for parameter in [self.agitation, self.airflow, self.DO, self.temp, self.pH, self.feed_pump, self.base_pump,
                               self.antifoam_pump]:
 
-                if parameter == self.pH:
+                if parameter == self.pH:  # pH needed less deviation to be more realistic
                     values.append(round(random.uniform(0.9995 * parameter, 1.0005 * parameter), 4))
                 # pumps shouldn't have noise
                 elif parameter == self.antifoam_pump or parameter == self.base_pump or parameter == self.feed_pump:
@@ -133,13 +138,15 @@ class Reactor:
             with open(self.file, 'a', newline='') as csvfile:
                 writer = csv.writer(csvfile, delimiter=',')
                 writer.writerow(values)
+                csvfile.close()
 
         else:
             self.end_run()
 
     def read_data(self, parameter):
         '''
-
+        CURRRENTLY UNUSED
+        Read the CSV file storing all the parameter data of the current fermentation run
         :param parameter: must be exactly the same as the header of the parameter you want to analyze
         :return: a pandas dataframe created from the reactor's csv file that only contains the timestamp, EFT, and
         desired parameter
@@ -153,20 +160,19 @@ class Reactor:
         # data.insert(loc=2, column='EFT', value=(data['Timestamp'] - start_time) / np.timedelta64(1, 'h'))
         return data
 
-
-    def antifoam(self, eft):
+    def antifoam_controller(self, eft):
         """
-        turns antifoam pump on at 1 mL/hr for 10 minutes every 3 hours
+        Controls the antifoam pump data including if it is operating under normal conditions and if a deviation causes
+        the pump to be on or off.
         :param eft: current EFT
         :type eft: datetime.timedelta object
         :return:
         """
         if self.antifoam_deviation == 'on':
             self.antifoam_pump = 1
-        elif self.antifoam_deviation == 'off' or self.antifoam_deviation is None:
-            self.antifoam_pump = 0
-            '''
             if self.DO > 0:
+                self.DO -= 0.5
+                '''
                 print(f'beginning {self.DO}')
                 csv_data = self.read_data('Antifoam Pump [mL/hr]')
                 current_time = csv_data['Timestamp'].iat[-1]
@@ -180,7 +186,7 @@ class Reactor:
                     else:
                         start_time = csv_data['Timestamp'].iat[idx]
                         print(f'start_time {start_time}')
-                        running_length = current_time-start_time
+                        running_length = current_time - start_time
                         print(f' running length {running_length}')
                         if running_length > datetime.timedelta(minutes=30) and self.DO > 3:
                             self.DO -= 4
@@ -193,7 +199,11 @@ class Reactor:
                             print('-0.5')
                         break
                         print(f'end {self.DO}')
-                '''
+                        '''
+
+        elif self.antifoam_deviation == 'off' or self.antifoam_deviation is None:
+            self.antifoam_pump = 0
+
         if not self.antifoam_deviation:
             for hour in range(10, 65, 3):
                 # turn pump on every 3 hours
@@ -204,17 +214,18 @@ class Reactor:
                     self.antifoam_pump = 0
 
 
-
     def first_pulse(self, eft):
         """
-        starts the first pulse of the reactor and simultaneously spikes the pH and DO. Function only used
-        from an EFT of 9 to 9:40
-        :param eft: current EFT
+        Starts the first pulse of the reactor by simultaneously spiking the pH and DO which indicates the cells are
+        starving and in need of glucose. This first pulse spikes higher/longer than all subsequent feed spikes to ensure
+        the cells are requiring glucose and feed is not prematurely introduced to the reactor. This function is only
+        active after an EFT of 9 hours (around the time the actual first feed spike would occur).
+        :param eft: current Elapsed Fermentation Time (EFT)
         :type eft: datetime.timedelta object
         :return:
         """
-        # start the first feed trigger might not need feed_trigger attribute
-        if datetime.timedelta(hours=9) < eft and not self.feeding and not self.feed_triggered:
+        if datetime.timedelta(hours=9) < eft and not self.feeding and not self.feed_triggered and \
+                not self.feed_deviation == 'on':
             if self.pH < 8:
                 self.pH += 0.002
             if self.DO < 100:
@@ -222,12 +233,18 @@ class Reactor:
             self.agitation = 1500
 
     def feed_spike(self, eft):
-        '''
-        Controls feed spikes indicating cells are starving and need additional glucose
-        :param eft:
+        """
+        Controls all feed spikes after the first pulse. This function indicates is used to indicate cells are starving
+        and need additional feed glucose. These spikes are smaller than the initial feed because an incorrect feed
+        trigger is less likely to occur. Feed triggers occur more during the middle of the run when the cells are in the
+        stationary phase. Towards the end of therun the cells begin to die (death phrase) and they do not require
+        glucose as frequently.
+        :param eft: current Elapsed Fermentation Time (EFT)
+        :type eft: datetime.timedelta object
         :return:
-        '''
-        if (datetime.timedelta(hours=15) == eft or self.spiking) and self.feed_triggered:
+        """
+        if (datetime.timedelta(hours=15) == eft or self.spiking) and self.feed_triggered and \
+                not self.feed_deviation == 'on':
             self.last_feed = eft
             self.spiking = True
             if self.pH < 8:
@@ -238,79 +255,137 @@ class Reactor:
             if datetime.timedelta(hours=15) < eft < datetime.timedelta(hours=30):
                 if eft > self.last_feed + datetime.timedelta(hours=1, minutes=30) or self.spiking:
                     self.spiking = True
+                    self.last_feed = eft
+
             elif datetime.timedelta(hours=30) < eft < datetime.timedelta(hours=55):
                 if eft > self.last_feed + datetime.timedelta(minutes=30) or self.spiking:
                     self.spiking = True
+                    self.last_feed = eft
             elif datetime.timedelta(hours=55) < eft < datetime.timedelta(hours=66):
                 if eft > self.last_feed + datetime.timedelta(hours=2) or self.spiking:
                     self.spiking = True
+                    self.last_feed = eft
 
-    def do_trend(self, eft):
+    def initial_DO(self, eft):
         """
-        adjusts the DO values of the reactor to fit the lag and growth phase trend
-        :param eft: current EFT
+        Adjusts the DO values of the reactor to fit the trend of the initial lag and growth phases
+        :param eft: current Elapsed Fermentation Time (EFT)
         :type eft: datetime.timedelta object
         :return:
         """
-        # initial DO trend during lag phase
-
         if eft < datetime.timedelta(hours=7, minutes=36):
             int_eft = eft.total_seconds() / 3600
             self.DO = -math.exp(int_eft - 3.5) + 100
 
-    def motor_deviation(self):
+    def motor_controller(self):
         """
-        increases the agitation to 1500 rpm once feed has triggered indicating cells are actively consuming glucose and
-        need additional oxygen
+        Controls the motor data including if it is operating under normal conditions or if a deviation causes
+        the rpm to be higher or lower than the set point. When under normal conditions the agitation increases from 1000
+        to 1500 rpm once feed has triggered indicating cells are actively consuming glucose and need additional oxygen.
         :return:
         """
+        change_DO = 0.3
+        # a motor deviation is occurring
         if self.agitation_deviation is not None:
             if self.agitation_deviation == 'up':
                 self.agitation += 5
-            elif self.agitation_deviation == 'down':
+                # complicated to predict DO change due to the motor during the exponential phase
+                if self.feed_triggered:
+                    self.DO += change_DO
+                    self.fixed_motor += change_DO
+            elif self.agitation_deviation == 'down' and self.agitation > 0:
                 self.agitation -= 5
+                # complicated to predict DO change due to the motor during the exponential phase
+                if self.feed_triggered:
+                    self.DO -= change_DO
+                    self.fixed_motor -= change_DO
+
+        # operate normally
         elif self.agitation_deviation is None:
+            # after a motor deviation is fixed, appropriately adjust the DO up or down to what it would normally be
+            if self.fixed_motor != 0 and self.agitation != 0:
+                percent_deviated = (self.fixed_motor - self.agitation) / self.agitation
+                print('trying to adjust DO')
+                print(f'percent {percent_deviated}')
+                # TODO check if this is properly working
+                '''
+                
+                if percent_deviated > 0.03:
+                    print('adjusted DO')
+                    self.DO += percent_deviated * self.DO
+                '''
+                self.DO -= self.fixed_motor
+                self.fixed_motor = 0
             if self.feed_triggered:
                 self.agitation = 1500
             elif not self.feed_triggered:
                 self.agitation = 1000
 
-    def airflow_adjust(self):
+    def temp_controller(self):
+        '''
+        Controls the temperature data including if it is operating under normal conditions or if a deviation causes
+        the temperature to drift higher or lower than the set point.
+        :return:
+        '''
+        if self.temp_deviation is None:
+            self.temp = 32
+        elif self.temp_deviation == 'up':
+            self.temp += 0.1
+        elif self.temp_deviation == 'down':
+            self.temp -= 0.1
+
+    def airflow_controller(self):
+        '''
+        Controls the airflow data including if it is operating under normal conditions or if a deviation causes
+        the airflow to drift higher or lower than the set point.
+        :return:
+        '''
         if self.airflow_deviation is None:
             self.airflow = 60
+            if self.fixed_airflow != 0:
+                self.DO -= self.fixed_airflow
+                self.fixed_airflow = 0
+
         else:
             if self.airflow_deviation == 'up':
-                self.airflow += 0.3
+                self.airflow += 0.1
+                self.feed_triggered
                 self.DO += 0.2
-            elif self.airflow_deviation == 'down':
-                self.airflow -= 0.3
-                self.DO -= 0.2
+                self.fixed_airflow += 0.2
 
-    def feed(self):
+            elif self.airflow_deviation == 'down':
+                self.airflow -= 0.1
+                self.DO -= 0.2
+                self.fixed_airflow -= 0.2
+
+    def feed_controller(self):
         """
-        activates the feed pump once the pH has passed 7.27 for the first pulse and 7.22 for all subsequent feed
-        spikes. The feed is acidic which decreases the pH and now the cells have a carbon source to consume, the cells
-        are metabolically active and the DO value decreases.
+        Activates the feed pump once the pH has passed 7.27 for the first pulse and 7.22 for all subsequent feed
+        spikes. The feed is acidic which decreases the pH and provides the cells a carbon source to consume. The cells
+        are metabolically active and consume the glucose. This is a aerobic fermentation so when the cells are
+        consuming glucose the cells are using oxygen so DO value decreases.
         :return:
         """
-        # controlling base pump
-        if self.feed_deviation is None and self.base_deviation is None:
-            if (self.pH > 7.27 or self.feeding) and (not self.feed_triggered or self.pH > 7.20):
-                    print('reducing pH >7.27')
-                    self.pH -= 0.002
-                    if self.DO > 0:
-                        self.DO -= 0.4
-                    self.feed_pump = 40
-                    self.feeding = True
-                    self.spiking = False
-            elif (self.pH > 7.22 or self.feeding) and self.feed_triggered:
-                    print('reducing pH >7.22')
-                    self.pH -= 0.002
-                    if self.DO > 0:
-                        self.DO -= 0.2
-                    self.feed_pump = 40
-                    self.feeding = True
-                    self.spiking = False
+
+        if self.feed_deviation is None and not self.base_deviation == 'on':
+            if self.pH < 7.19:
+                self.feeding = False
+            if (self.pH > 7.27 or self.feeding) and not self.feed_triggered:
+                self.pH -= 0.002
+                if self.DO > 0:
+                    self.DO -= 0.4
+                self.feed_pump = 40
+                self.feeding = True
+                self.spiking = False
+                if self.pH < 7.20:
+                    self.feed_triggered = True
+            elif (7.19 < self.pH > 7.22 or self.feeding) and self.feed_triggered:
+                self.pH -= 0.002
+                if self.DO > 0:
+                    self.DO -= 0.2
+                self.feed_pump = 40
+                self.feeding = True
+                self.spiking = False
             else:
                 self.feed_pump = 0
         else:
@@ -323,22 +398,23 @@ class Reactor:
             elif self.feed_deviation == 'off':
                 self.feed_pump = 0
 
-    def base(self):
+    def base_controller(self):
         '''
-        controls the base pump, if base was ever added to the reactor, that means feed and the first glucose pulse was
-        also triggered
+        Controls the base pump including if it is operating under normal conditions or if a deviation causes
+        the base pump to turn on or if it is unable to turn on. I want to display how the acidic feed affects the pH so
+        base is not added during a feed deviation. In a real situation if the pH reaches below the set point base would
+        be added to try and maintain the set point.
         :return:
         '''
-        if not self.base_deviation:
+
+        if not self.base_deviation and not self.feed_deviation:
             if 0 < self.pH < 7.20:
                 self.feeding = False
-                self.feed_triggered = True
                 self.pH += 0.001
                 self.base_pump = 35
             else:
                 self.base_pump = 0
         else:
-
             if self.base_deviation == 'on':
                 self.base_pump = 40
                 if self.pH < 14:
