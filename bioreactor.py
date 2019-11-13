@@ -7,7 +7,9 @@ import math
 
 
 class Reactor:
-    __refs__ = collections.defaultdict(list)
+    """
+    # TODO add docstring
+    """
 
     def __init__(self, name, pH=7.20, temp=32, agitation=1000, airflow=60, DO=100,
                  final_eft=datetime.timedelta(hours=68), deviation=False, active=False, start_time=None):
@@ -23,7 +25,6 @@ class Reactor:
         self.start_time = start_time
         self.file = name + '.csv'
         self.params = [self.agitation, self.airflow, self.DO, self.temp, self.pH]
-        self.__refs__[self.__class__].append(weakref.ref(self))
         self.feed_triggered = False
         self.feeding = False
         self.spiking = False
@@ -46,7 +47,7 @@ class Reactor:
 
     def start_run(self):
         """
-        Activates the run and logs the fermentation start time.
+        Activates the run and creates the fermentation start time.
         :return: None
         """
         self.active = True
@@ -61,7 +62,7 @@ class Reactor:
 
     def create_csv(self):
         """
-        Creates the csv file for the reactor instance with headers and the first row of data values.
+        Creates the csv file for the reactor instance with column headers and the first row of data values.
         :return: None
         """
         with open(self.file, 'w+', newline='') as csvfile:
@@ -100,7 +101,7 @@ class Reactor:
             self.initial_DO(current_eft)
             self.first_pulse(current_eft)
             self.feed_spike(current_eft)
-            self.feed_controller()
+            self.feed_controller(current_eft)
             self.base_controller()
             self.motor_controller()
             self.antifoam_controller(current_eft)
@@ -113,7 +114,7 @@ class Reactor:
 
                 if parameter == self.pH:  # pH needs less noise than other parameters to be more realistic
                     values.append(round(random.uniform(0.9995 * parameter, 1.0005 * parameter), 4))
-                # pumps shouldn't have equipment noise
+                # pumps shouldn't have equipment noise i.e. 'off' should hold a steady 0 value
                 elif parameter == self.antifoam_pump or parameter == self.base_pump or parameter == self.feed_pump:
                     values.append(parameter)
                 else:
@@ -183,7 +184,7 @@ class Reactor:
 
     def initial_DO(self, eft):
         """
-        Adjusts the DO values of the reactor to fit the trend of the initial lag and growth phases
+        Adjusts the DO values of the reactor to replicate the trends of the initial lag and growth phases.
         :param eft: current Elapsed Fermentation Time (EFT)
         :type eft: datetime.timedelta object
         :return: None
@@ -203,10 +204,11 @@ class Reactor:
         if self.antifoam_deviation is None:
             for hour in range(10, 68, 3):
                 # turn pump on every 3 hours
-                if eft == datetime.timedelta(hours=hour):
+                if datetime.timedelta(hours=hour) <= eft <= datetime.timedelta(hours=hour, minutes=10):
                     self.antifoam_pump = 1
+                    break
                 # turn pump off every 3 hours and 10 minutes
-                elif eft == datetime.timedelta(hours=hour, minutes=10):
+                else:
                     self.antifoam_pump = 0
 
         elif self.antifoam_deviation == 'on':
@@ -247,7 +249,7 @@ class Reactor:
         elif self.agitation_deviation == 'down' and self.agitation > 0:
             self.agitation -= 5
             # complicated to predict DO change due to the motor during the exponential phase so ignore DO effects
-            if self.feed_triggered:
+            if self.feed_triggered and self.DO > 0:
                 self.DO -= change_DO
                 self.fixed_motor -= change_DO
 
@@ -286,7 +288,7 @@ class Reactor:
             self.DO -= 0.2
             self.fixed_airflow -= 0.2
 
-    def feed_controller(self):
+    def feed_controller(self, eft):
         """
         Activates the feed pump once the pH has passed 7.27 for the first pulse and 7.22 for all subsequent feed
         spikes. The feed is acidic which decreases the pH and provides the cells a carbon source to consume. This is an
@@ -313,7 +315,14 @@ class Reactor:
             elif (7.19 < self.pH > 7.22 or self.feeding) and self.feed_triggered:
                 self.pH -= 0.002
                 if self.DO > 0:
-                    self.DO -= 0.2
+                    if eft > datetime.timedelta(hours=50):
+                        self.DO -= 0.1
+                    elif eft > datetime.timedelta(hours=45):
+                        self.DO -= 0.2
+                    elif eft > datetime.timedelta(hours=25):
+                        self.DO -= 0.25
+                    else:
+                        self.DO -= 0.5
                 self.feed_pump = 40
                 self.feeding = True
                 self.spiking = False
