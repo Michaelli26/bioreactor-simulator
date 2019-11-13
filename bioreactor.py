@@ -1,14 +1,41 @@
 import random
 import datetime
-import collections
 import csv
-import weakref
 import math
 
 
 class Reactor:
     """
-    # TODO add docstring
+    The reactor object creates a simulation of a bioreactor and records the data into a csv file similar to how an
+    Eppendorf Dasgip would record the data.
+
+    Process Set Points
+        Temperature - 32.0 °C
+        pH - 7.20
+        Airflow - 60 mL/s
+        Agitation - 1000 rpm -> 1500 rpm ramp after the first feed is triggered
+        DO - Not controlled
+
+    Additions
+        Feed - triggered by pH
+        Base - triggered by pH
+        Antifoam - set time schedule
+
+    Process Description
+        This particular fermentation simulates a fed-batch process in which an acidic feed containing
+    glucose, base and antifoam are added to the reactor. The feed is triggered once the microbes show signs of
+    starvation through the rise of the pH and DO. During the batch phase the pH is allowed to reach a value of 7.27,
+    indicating all the glucose is depleted and at this point, acidic feed will be added until the pH setpoint is dropped
+    to the set point (7.20). Since it takes awhile for the feed to homogenize with the tank broth, the pH will fall
+    below the set point which is why the base control is needed. When the feed is triggered, the motor ramps to 1500 rpm
+    as the microbes are more metabolically active and will require more oxygen for the aerobic fermentation process.
+    Antifoam is added on a set schedule and turns on for every 3 hours for 10 minutes after an EFT of 10 hours is
+    reached.
+
+    Deviations
+        The reactor begins with no deviations and deviations are only introduced through the PYQT GUI in the
+        simulatorpyqt module. Only mechanical deviations are simulated and include the following: motor, airflow,
+        temperature, feed pump, base pump, and antifoam pump errors
     """
 
     def __init__(self, name, pH=7.20, temp=32, agitation=1000, airflow=60, DO=100,
