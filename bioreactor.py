@@ -35,21 +35,31 @@ class Reactor:
     Deviations
         The reactor begins with no deviations and deviations are only introduced through the PYQT GUI in the
         simulatorpyqt module. Only mechanical deviations are simulated and include the following: motor, airflow,
-        temperature, feed pump, base pump, and antifoam pump errors
+        temperature, feed pump, base pump, and antifoam pump errors.
+
+    :param name: name of the reactor
+    :type name: str
+    :param pH: pH set point
+    :type pH: float
+    :param temp: temperature set point in °C
+    :param agitation: starting agitation set point in rpm
+    :type agitation: int
+    :param airflow: the airflow set point in mL/s
+    :type agitation: int
+    :param DO: the starting dissolved oxygen of the reactor in %
+    :type DO: int
     """
 
-    def __init__(self, name, pH=7.20, temp=32, agitation=1000, airflow=60, DO=100,
-                 final_eft=datetime.timedelta(hours=68), deviation=False, active=False, start_time=None):
+    def __init__(self, name, pH=7.20, temp=32, agitation=1000, airflow=60, DO=100):
         self.name = name
         self.pH = pH
         self.temp = temp
         self.agitation = agitation
         self.airflow = airflow
         self.DO = DO
-        self.final_eft = final_eft
-        self.deviation = deviation
-        self.active = active
-        self.start_time = start_time
+        self.final_eft = datetime.timedelta(hours=68)
+        self.active = False
+        self.start_time = None
         self.file = name + '.csv'
         self.params = [self.agitation, self.airflow, self.DO, self.temp, self.pH]
         self.feed_triggered = False
@@ -112,8 +122,9 @@ class Reactor:
     def log_data(self):
         """
         If the run is still active, this calls all the methods that declare the value of each parameter and logs
-        a single row of data to the reactor's csv file. Otherwise, if the current EFT is equal to or exceeds the final
-        EFT, this will call the end_run method and finish the fermentation run.
+        a single row of data to the reactor's csv file. Every time a new row of data is logged to the csv, it is counted
+        as an EFT of one minute. When the current EFT has reached the final EFT, this will call the end_run method and
+        finish the fermentation run.
         :return: None
         """
         values = []
