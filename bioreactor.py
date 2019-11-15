@@ -105,7 +105,7 @@ class Reactor:
         with open(self.file, 'w+', newline='') as csvfile:
             writer = csv.writer(csvfile, delimiter=',')
             headers = ['Timestamp', 'Agitation [rpm]', 'Airflow [mL/s]', 'DO [%]', 'Temp [C]', 'pH',
-                       'Feed pump [ml/hr]',
+                       'Feed Pump [ml/hr]',
                        'Base Pump [mL/hr]', 'Antifoam Pump [mL/hr]', '_EFT']
             writer.writerow(headers)
             first_values = [self.start_time]
