@@ -64,7 +64,7 @@ class BioreactorSimulator(QMainWindow):
         self.reactor = Reactor(name='dg1')
         self.reactor.start_run()
         self.reactor.create_csv()
-        self.headers = ('Agitation [rpm]', 'Airflow [mL/s]', 'DO [%]', 'Temp [C]', 'pH', 'Feed pump [ml/hr]',
+        self.headers = ('Agitation [rpm]', 'Airflow [mL/s]', 'DO [%]', 'Temp [C]', 'pH', 'Feed Pgior.pyump [ml/hr]',
                         'Base Pump [mL/hr]', 'Antifoam Pump [mL/hr]')
 
         # create reoccurring event to log new data in the csv
@@ -150,7 +150,7 @@ class BioreactorSimulator(QMainWindow):
 
     def update_graph(self):
         """
-        Uses the pandas library to read the reactor's CSV file and updates both the top and bottom graph of the main
+        Uses the Pandas library to read the reactor's CSV file and updates both the top and bottom graph of the main
         widget.
         :return:None
         """
