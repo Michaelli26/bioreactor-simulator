@@ -64,7 +64,7 @@ class BioreactorSimulator(QMainWindow):
         self.reactor = Reactor(name='dg1')
         self.reactor.start_run()
         self.reactor.create_csv()
-        self.headers = ('Agitation [rpm]', 'Airflow [mL/s]', 'DO [%]', 'Temp [C]', 'pH', 'Feed Pgior.pyump [ml/hr]',
+        self.headers = ('Agitation [rpm]', 'Airflow [mL/s]', 'DO [%]', 'Temp [C]', 'pH', 'Feed Pump [ml/hr]',
                         'Base Pump [mL/hr]', 'Antifoam Pump [mL/hr]')
 
         # create reoccurring event to log new data in the csv
@@ -103,7 +103,7 @@ class BioreactorSimulator(QMainWindow):
         Sets a reactor's parameter to the corresponding button deviation the first time the button is clicked.
         The second time the button is clicked, the deviation is removed/fixed.
         Only one deviation is allowed to occur within any given time because simulating the effects of many deviations
-        occurring simultaneously would be very difficult and unlikely to occur in an actual reactor.
+        occurring simultaneously would be very complicated and unlikely to occur in an actual reactor.
         :param instance: a QPushButton object
         :return: None
         """
@@ -150,7 +150,7 @@ class BioreactorSimulator(QMainWindow):
 
     def update_graph(self):
         """
-        Uses the Pandas library to read the reactor's CSV file and updates both the top and bottom graph of the main
+        Uses the Pandas library to read the reactor's csv file and updates both the top and bottom graph of the main
         widget.
         :return:None
         """
