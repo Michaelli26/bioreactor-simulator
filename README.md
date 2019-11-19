@@ -13,7 +13,7 @@ tank success rates is a major benefit. This program seeks to help out fermentati
 alerts within minutes of a mechanical deviation so that it can be caught very early with enough time to fix it and save 
 the run.
 
-##Process Description
+## Process Description
 This fermentation simulates a fed-batch process in which an acidic glucose feed, base and antifoam are added to the reactor. The feed is triggered once the microbes show signs of
 starvation through the rise of the pH and DO. During the batch phase the pH is allowed to reach a value of 7.27,
 indicating all the glucose is depleted. At this point, acidic feed will be added until the pH is dropped
