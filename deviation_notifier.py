@@ -105,10 +105,10 @@ def check_pumps(pump, data, setpoint, tolerance):
 def agitation(data):
     """
     Checks the reactor's csv file to see if the agitation ramped up to 1500. Under normal operating conditions, the rpm
-    would jump from 1000 to 1500 when the feed is triggered. This function cannot mistake any agitation deviations for
-    an rpm ramp and should not be called once it has already detected an rpm ramp. Since the setpoint of an agitation
-    ramp increases instantly, this function must be called every time a new row of data is logged to the reactor's csv
-    file or else this function will miss the agitation jump.
+    would jump from 1000 to 1500 when the feed is first triggered. This function cannot mistake any agitation deviations
+    for an rpm ramp and should not be called once it has already detected an rpm ramp. Since the setpoint of an
+    agitation ramp increases instantly, this function must be called every time a new row of data is logged to the
+    reactor's csv file or else this function will miss the agitation jump.
 
     :param data: the recorded values of the motor
     :type data: a Pandas Series
@@ -122,8 +122,8 @@ def agitation(data):
 
 def check_pH(data, max_ph, min_ph=7.195):
     """
-    Checks the pH of the reactor and makes sure its within the range of the allowed range the pH will rise during a feed
-    spike. This does not check that the pH is mainly held at the set point.
+    Checks the pH of the reactor and makes sure its within the allowed range of the pH (pH will rise during a
+    starvation).
 
     :param data: the recorded values of the reactor's pH
     :type data: a Pandas Series
@@ -191,7 +191,7 @@ def email_alert(param, time):
     smtp_obj = smtplib.SMTP('smtp.gmail.com', 587)
     smtp_obj.ehlo()
     smtp_obj.starttls()
-    smtp_obj.login(associate_email, os.environ['EMAIL_PASS'])
+    smtp_obj.login(associate_email, os.environ.get('EMAIL_PASS'))
     msg = f'Deviation with {param} at {time}'
     smtp_obj.sendmail(associate_email, associate_email, 'Subject: Deviation Notifier\n\n' + msg)
 
@@ -200,7 +200,7 @@ def text_alert(param, time):
     """
     Alerts the fermentation associate of the deviating parameter along with the start time of the deviation by text.
     Currently unused because the Twilio account is only on a trial version.
-    :param param: the failing parameter written as it appears in the reactor's csv file
+    :param param: the failing parameter
     :type param: str
     :param time: start time of the deviation
     :type time: datetime.datetime object in the format of '%Y-%m-%d %H:%M:%S.%f'
@@ -210,7 +210,7 @@ def text_alert(param, time):
     client = Client(os.environ.get('TWILIO_SID'), os.environ.get('TWILIO_TOKEN'))
     message = client.messages.create(
         to=associate_phone,
-        from_="+14154814546",  # phone number is expired
+        from_="+14154814546",  # Twilio phone number is expired
         body=f'Deviation with {param} at {time} ')
 
 
@@ -262,16 +262,14 @@ def check_deviations():
 
                 if notify and label not in notified.keys():
                     notified[label] = 0
-                    # email_alert(label, data["Timestamp"][deviation_idx])
-                    # text_alert(label, data["Timestamp"][deviation_idx])
+                    # email_alert(label, data["Timestamp"][deviation_idx])  # uncomment to send email alerts
+                    # text_alert(label, data["Timestamp"][deviation_idx])  # uncomment to send text alerts
                     print(f'{label} deviation at {data["Timestamp"][deviation_idx]}')
 
-            # FIXME notified not removing pumps revert to longer method if needed
             if label in notified.keys() and not notify:
                 notified[label] += 1
                 # if deviation doesn't occur again in the next 120 data logs (120 mins) it is counted as fixed
-                # NOTE: does not have to be a consecutive 120 logs so it alerts to new deviations and sends reminders
-                # about deviations not addressed/fixed
+                # NOTE: does not have to be a consecutive 120 logs
                 if notified[label] > 120:
                     del notified[label]
 
