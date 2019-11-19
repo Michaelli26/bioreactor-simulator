@@ -1,0 +1,3 @@
+#!/home/michael/Programing/venvs/bioreactorvenv/bin python3
+import os
+os.environ['EMAIL_PASS'] = 'yoiyjdykxhvxugbv'

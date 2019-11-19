@@ -22,12 +22,12 @@ class Reactor:
         Antifoam - set time schedule
 
     Process Description
-        This particular fermentation simulates a fed-batch process in which an acidic feed containing
-    glucose, base and antifoam are added to the reactor. The feed is triggered once the microbes show signs of
-    starvation through the rise of the pH and DO. During the batch phase the pH is allowed to reach a value of 7.27,
-    indicating all the glucose is depleted and at this point, acidic feed will be added until the pH setpoint is dropped
-    to the set point (7.20). Since it takes awhile for the feed to homogenize with the tank broth, the pH will fall
-    below the set point which is why the base control is needed. When the feed is triggered, the motor ramps to 1500 rpm
+        This particular fermentation simulates a fed-batch process in which an acidic glucose feed,
+    base and antifoam are added to the reactor. The feed is triggered once the microbes show signs of starvation through
+    the rise of the pH and DO. During the batch phase the pH is allowed to reach a value of 7.27, indicating all the
+    glucose is depleted. At this point, acidic feed will be added until the pH setpoint is dropped to the
+    set point (7.20). Since it takes time for the feed to homogenize with the tank broth, the pH will fall below the
+    set point which is why the base control is needed. When the feed is first triggered, the motor ramps to 1500 rpm
     as the microbes are more metabolically active and will require more oxygen for the aerobic fermentation process.
     Antifoam is added on a set schedule and turns on for every 3 hours for 10 minutes after an EFT of 10 hours is
     reached.
@@ -50,13 +50,13 @@ class Reactor:
     :type DO: int
     """
 
-    def __init__(self, name, pH=7.20, temp=32, agitation=1000, airflow=60, DO=100):
+    def __init__(self, name):
         self.name = name
-        self.pH = pH
-        self.temp = temp
-        self.agitation = agitation
-        self.airflow = airflow
-        self.DO = DO
+        self.pH = 7.20
+        self.temp = 32.0
+        self.agitation = 1000
+        self.airflow = 60
+        self.DO = 100
         self.final_eft = datetime.timedelta(hours=68)
         self.active = False
         self.start_time = None
@@ -177,12 +177,14 @@ class Reactor:
         :type eft: datetime.timedelta object
         :return: None
         """
+
         if datetime.timedelta(hours=9) < eft and not self.feeding and not self.feed_triggered and \
                 not self.feed_deviation == 'on':
             if self.pH < 8:
                 self.pH += 0.002
             if self.DO < 100:
                 self.DO += 0.3
+            self.last_feed = eft
 
     def feed_spike(self, eft):
         """
@@ -195,7 +197,8 @@ class Reactor:
         :type eft: datetime.timedelta object
         :return: None
         """
-        if (datetime.timedelta(hours=15) == eft or self.spiking) and self.feed_triggered and \
+
+        if self.spiking and self.feed_triggered and \
                 not self.feed_deviation == 'on':
             self.last_feed = eft
             self.spiking = True
@@ -254,7 +257,6 @@ class Reactor:
             if self.DO > 0:
                 self.DO -= 0.5
 
-        # also turns pump off after
         elif self.antifoam_deviation == 'off':
             self.antifoam_pump = 0
 
@@ -322,9 +324,11 @@ class Reactor:
             self.fixed_airflow += 0.2
 
         elif self.airflow_deviation == 'down':
-            self.airflow -= 0.1
-            self.DO -= 0.2
-            self.fixed_airflow -= 0.2
+            if self.airflow > 0:
+                self.airflow -= 0.1
+            if self.DO > 0:
+                self.DO -= 0.2
+                self.fixed_airflow -= 0.2
 
     def feed_controller(self, eft):
         """
@@ -385,7 +389,7 @@ class Reactor:
         the set point.
         :return: None
         """
-        # disable base pump if a feed deviation is causing pH to drop to the base trigger in order to demonstrate
+        # disabled base pump if a feed deviation is causing pH to drop to the base trigger in order to demonstrate
         # the isolated effects of a feed pump
         if self.base_deviation is None and not self.feed_deviation == 'on':
             if 0 < self.pH < 7.20:
