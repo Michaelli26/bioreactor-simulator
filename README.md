@@ -46,9 +46,9 @@ reached.
 Clone the repo: ```git clone https://github.com/Michaelli26/bioreactor-simulator```
 
 ### Prerequisites
-
+This project runs on Python 3.6
 ```
-pip install requirements.txt
+pip install -r requirements.txt
 ```
 ### How to Run
 Run ```simulatorpyqt.py``` to start the application
